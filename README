@@ -1,4 +1,4 @@
-Ansible + NodeJS + Vagrant Multiple Machine
+# Ansible + NodeJS + Vagrant Multiple Machine
 ========
 
 Just run:
@@ -7,17 +7,17 @@ Just run:
 vagrant provision   # running provision automation if already create virtual machines
 ```
 
-Dependencies
+# Dependencies
 ------------
 
-No depedencies.
+# No depedencies.
 
-License
+# License
 -------
 
 MIT
 
-Author Information
+# Author Information
 ------------------
 
 MHY
