@@ -1,0 +1,146 @@
+- hosts: app
+  user: vagrant
+
+  vars:
+    - homeDir: /home/vagrant
+    - appDir : demo-app
+    - nodeVer: v6.2.0
+
+  tasks:
+
+  - action: shell whoami
+    register: whoami
+
+  - name: set locale
+    shell: export LC_ALL="en_US.UTF-8" && export LANGUAGE="en_US.UTF-8" && locale >> /etc/environment
+    sudo: yes
+
+  - name: update apt cache
+    apt: update_cache=yes cache_valid_time=3600
+    sudo: yes
+
+  - name: install packages
+    apt: pkg={{ item }} state=latest
+    sudo: yes
+    with_items:
+      - curl
+      - gnupg
+      - fail2ban
+      - ufw
+      - wget
+      - rsync
+      - git
+      - nginx
+      - zip
+      - imagemagick
+      - libkrb5-dev
+      - build-essential
+      - vim
+      - chkrootkit
+      - psmisc
+    notify:
+      - restart nginx
+
+  - name: ensure fail2ban is running
+    sudo: yes
+    action: service name=fail2ban state=restarted enabled=yes
+
+  - name: forbid SSH root login
+    sudo: yes
+    lineinfile: destfile=/etc/ssh/sshd_config regexp="^PermitRootLogin" line="PermitRootLogin no" state=present
+    notify: restart ssh
+
+  - name: reset firewall
+    sudo: yes
+    action: shell ufw --force reset
+
+  - name: allow firewall authorized ports
+    sudo: yes
+    action: shell ufw allow {{ item }}
+    with_items:
+      - 22
+      - 80
+
+  - name: enable firewall
+    sudo: yes
+    action: shell ufw --force enable
+
+  - name: Install NVM
+    shell: curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.31.1/install.sh | bash
+
+  - name: Install Node Using NVM
+    command: bash -c '. ~/.nvm/nvm.sh; nvm install {{nodeVer}} '
+
+  - name: Set Node Version
+    command: bash -c '. ~/.nvm/nvm.sh; nvm alias default {{nodeVer}}'
+  
+  - name: Using default node
+    command: bash -c '. ~/.nvm/nvm.sh; nvm use default'
+
+  - name: Symlink node to system-wide
+    file: src=/home/vagrant/.nvm/versions/node/{{nodeVer}}/bin/node dest=/usr/bin/node state=link
+    sudo: yes
+
+  - name: Install mon
+    action: shell (mkdir /tmp/mon && cd /tmp/mon && curl -L# https://github.com/visionmedia/mon/archive/master.tar.gz | tar zx --strip 1 && make install && rm -rf /tmp/mon)
+    sudo: yes
+
+  - name: Install Mongroup
+    command: /home/vagrant/.nvm/versions/node/{{nodeVer}}/bin/npm install -g mongroup -d
+    register: npm_finished
+
+  - name: Ensure Creates directory mon
+    file: path={{homeDir}}/mon state=directory recurse=yes
+
+  - stat: path={{homeDir}}/mon/mongroup.conf
+    register: mongroup_rules
+
+  - name: Create mongroup.conf file
+    file: path={{homeDir}}/mon/mongroup.conf state=touch
+    when: not mongroup_rules.stat.exists
+
+  - name: Set mongroup logs
+    lineinfile: dest={{homeDir}}/mon/mongroup.conf regexp='' line='logs = /home/vagrant/mon/logs' state=present
+    when: not mongroup_rules.stat.exists
+
+  - name: Set mongroup pids
+    lineinfile: dest={{homeDir}}/mon/mongroup.conf  regexp="^pids " insertafter="^logs " line="pids = /home/vagrant/mon/pids" state=present
+
+  - name: Set variable for running app
+    lineinfile: dest={{homeDir}}/mon/mongroup.conf  regexp="^apps " insertafter="^pids " line="apps = cd /home/vagrant/demo-app; /home/vagrant/.nvm/versions/node/{{nodeVer}}/bin/npm start" state=present
+
+  - name: Stop App if Already Running
+    command: /home/vagrant/.nvm/versions/node/{{nodeVer}}/bin/mg stop chdir={{homeDir}}/mon
+
+  - name: Clone Repo
+    git: repo=https://github.com/madhums/node-express-mongoose-demo.git dest={{homeDir}}/{{appDir}} force=yes
+
+  - name: Running NPM install
+    command: /home/vagrant/.nvm/versions/node/{{nodeVer}}/bin/npm install chdir={{homeDir}}/{{appDir}}
+    register: npm_finished
+
+  - name: Conf gulp
+    replace: dest={{homeDir}}/{{appDir}}/config/env/development.js regexp='mongodb://localhost' replace='mongodb://192.168.1.5:27017'
+    register: gulp
+
+  - name: Copy environment app
+    command: cp {{homeDir}}/{{appDir}}/.env.example {{homeDir}}/{{appDir}}/.env
+
+  - name: Start App
+    command: /home/vagrant/.nvm/versions/node/{{nodeVer}}/bin/mg start chdir={{homeDir}}/mon
+
+  - name: Configure nginx default site
+    copy: src=nginx/nginx-default dest=/etc/nginx/sites-available/default
+    sudo: yes
+    notify: restart nginx
+
+  handlers:
+
+  - name: restart nginx
+    sudo: yes
+    action: service name=nginx state=restarted enabled=yes
+
+  - name: restart ssh
+    sudo: yes
+    action: service name=ssh state=restarted enabled=yes
+
