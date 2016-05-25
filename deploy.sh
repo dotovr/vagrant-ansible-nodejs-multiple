@@ -11,4 +11,4 @@ sleep 10
 
 echo 'Crate APP Virtual Machine'
 vagrant up app
-slepp 10
+sleep 10
